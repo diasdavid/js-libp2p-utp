@@ -8,25 +8,30 @@ chai.use(dirtyChai)
 const UTP = require('../src')
 const multiaddr = require('multiaddr')
 
+const mockUpgrader = {
+  upgradeInbound: maConn => maConn,
+  upgradeOutbound: maConn => maConn
+}
+
 describe('filter addrs', () => {
   const base = '/ip4/127.0.0.1'
-  const ipfs = '/ipfs/Qmb6owHp6eaWArVbcJJbQSyifyJBttMMjYV76N2hMbf5Vw'
+  const p2p = '/p2p/Qmb6owHp6eaWArVbcJJbQSyifyJBttMMjYV76N2hMbf5Vw'
 
   let utp
 
   before(() => {
-    utp = new UTP()
+    utp = new UTP({ upgrader: mockUpgrader })
   })
 
   it('filter valid addrs for this transport', () => {
     const ma1 = multiaddr(base + '/tcp/9090')
     const ma2 = multiaddr(base + '/udp/9090')
     const ma3 = multiaddr(base + '/tcp/9090/http')
-    const ma4 = multiaddr(base + '/tcp/9090' + ipfs)
-    const ma5 = multiaddr(base + '/tcp/9090/http' + ipfs)
-    const ma6 = multiaddr('/ip4/127.0.0.1/tcp/9090/p2p-circuit' + ipfs)
+    const ma4 = multiaddr(base + '/tcp/9090' + p2p)
+    const ma5 = multiaddr(base + '/tcp/9090/http' + p2p)
+    const ma6 = multiaddr('/ip4/127.0.0.1/tcp/9090/p2p-circuit' + p2p)
     const ma7 = multiaddr(base + '/udp/9090/utp')
-    const ma8 = multiaddr(base + '/udp/9090/utp' + ipfs)
+    const ma8 = multiaddr(base + '/udp/9090/utp' + p2p)
 
     const valid = utp.filter([
       ma1,

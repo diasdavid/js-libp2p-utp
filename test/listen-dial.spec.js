@@ -6,11 +6,16 @@ const dirtyChai = require('dirty-chai')
 const expect = chai.expect
 chai.use(dirtyChai)
 const nativeUTP = require('utp-native')
-const pull = require('pull-stream')
+const pipe = require('it-pipe')
 const multiaddr = require('multiaddr')
 
 const UTP = require('../src')
 const isCI = process.env.CI
+
+const mockUpgrader = {
+  upgradeInbound: maConn => maConn,
+  upgradeOutbound: maConn => maConn
+}
 
 describe('Listener (.createListener => listener)', () => {
   let utp
@@ -21,132 +26,127 @@ describe('Listener (.createListener => listener)', () => {
   }
 
   beforeEach(() => {
-    utp = new UTP()
+    utp = new UTP({ upgrader: mockUpgrader })
   })
 
-  it('.close with connections, through timeout', function (done) {
-    this.timeout(20 * 1000)
-
-    const listener = utp.createListener((conn) => pull(conn, conn))
+  it('.close with connections, through timeout', async () => {
+    const listener = utp.createListener((conn) => pipe(conn, conn))
 
     const addr = ma(6000)
     const connectOptions = addr.toOptions()
 
-    listener.listen(addr, () => {
-      const socket1 = nativeUTP.connect(Number(connectOptions.port), connectOptions.host)
-      const socket2 = nativeUTP.connect(Number(connectOptions.port), connectOptions.host)
+    await listener.listen(addr)
 
-      socket1.write('Some data that is never handled')
-      socket1.end()
+    const socket1 = nativeUTP.connect(Number(connectOptions.port), connectOptions.host)
+    const socket2 = nativeUTP.connect(Number(connectOptions.port), connectOptions.host)
 
-      socket1.on('error', (err) => expect(err).to.not.exist())
-      socket2.on('error', (err) => expect(err).to.not.exist())
-      socket1.on('connect', () => listener.close(done))
+    socket1.write('Some data that is never handled')
+    socket1.end()
+
+    socket1.on('error', (err) => expect(err).to.not.exist())
+    socket2.on('error', (err) => expect(err).to.not.exist())
+
+    await new Promise((resolve) => {
+      socket1.on('connect', async () => {
+        await listener.close()
+
+        resolve()
+      })
     })
   })
 
-  it('.listen on port 0', (done) => {
+  it('.listen on port 0', async () => {
     const listener = utp.createListener((conn) => {})
 
-    listener.listen(ma(0), () => {
-      listener.close(done)
-    })
+    await listener.listen(ma(0))
+    await listener.close()
   })
 
   // TODO: Get utp to work with IPv6 Addresses
-  it.skip('.listen on IPv6 addr', function (done) {
+  it.skip('.listen on IPv6 addr', async () => {
     if (isCI) { return this.skip() }
 
     const ma = multiaddr('/ip6/::/udp/12000/utp')
 
     const listener = utp.createListener((conn) => {})
-    listener.listen(ma, () => {
-      listener.close(done)
-    })
+    await listener.listen(ma)
+    await listener.close()
   })
 
-  it('.listen on any Interface', (done) => {
+  it('.listen on any Interface', async () => {
+    const listener = utp.createListener((conn) => {})
     const ma = multiaddr('/ip4/0.0.0.0/udp/12000/utp')
 
-    const listener = utp.createListener((conn) => {})
-
-    listener.listen(ma, () => {
-      listener.close(done)
-    })
+    await listener.listen(ma)
+    await listener.close()
   })
 
-  it('.getAddrs', (done) => {
+  it('.getAddrs', async () => {
     const listener = utp.createListener((conn) => {})
-    const addr = ma(12000)
+    const addr = ma(12001)
 
-    listener.listen(addr, () => {
-      listener.getAddrs((err, multiaddrs) => {
-        expect(err).to.not.exist()
-        expect(multiaddrs.length).to.equal(1)
-        expect(multiaddrs[0]).to.eql(addr)
-        listener.close(done)
-      })
-    })
+    await listener.listen(addr)
+
+    const multiaddrs = listener.getAddrs()
+    expect(multiaddrs.length).to.equal(1)
+    expect(multiaddrs[0]).to.eql(addr)
+
+    await listener.close()
   })
 
-  it('.getAddrs on port 0 listen', (done) => {
+  it('.getAddrs on port 0 listen', async () => {
+    const listener = utp.createListener((conn) => {})
     const addr = ma(0)
 
-    const listener = utp.createListener((conn) => {})
-    listener.listen(addr, () => {
-      listener.getAddrs((err, multiaddrs) => {
-        expect(err).to.not.exist()
-        expect(multiaddrs.length).to.equal(1)
-        listener.close(done)
-      })
-    })
+    await listener.listen(addr)
+
+    const multiaddrs = listener.getAddrs()
+    expect(multiaddrs.length).to.equal(1)
+
+    await listener.close()
   })
 
   // TODO: Get utp to understand the meaning of 0.0.0.0
-  it.skip('.getAddrs from listening on 0.0.0.0', (done) => {
+  it.skip('.getAddrs from listening on 0.0.0.0', async () => {
+    const listener = utp.createListener((conn) => {})
     const addr = multiaddr('/ip4/0.0.0.0/udp/12000/utp')
 
-    const listener = utp.createListener((conn) => {})
+    await listener.listen(addr)
 
-    listener.listen(addr, () => {
-      listener.getAddrs((err, multiaddrs) => {
-        expect(err).to.not.exist()
-        expect(multiaddrs.length > 0).to.equal(true)
-        expect(multiaddrs[0].toString().indexOf('0.0.0.0')).to.equal(-1)
-        listener.close(done)
-      })
-    })
+    const multiaddrs = listener.getAddrs()
+    expect(multiaddrs.length > 0).to.equal(true)
+    expect(multiaddrs[0].toString().indexOf('0.0.0.0')).to.equal(-1)
+
+    await listener.close()
   })
 
   // TODO: Get utp to understand the meaning of 0.0.0.0
-  it.skip('.getAddrs from listening on 0.0.0.0 and port 0', (done) => {
-    const addr = multiaddr('/ip4/0.0.0.0/udp/0/utp')
+  it.skip('.getAddrs from listening on 0.0.0.0 and port 0', async () => {
     const listener = utp.createListener((conn) => {})
+    const addr = multiaddr('/ip4/0.0.0.0/udp/0/utp')
 
-    listener.listen(addr, () => {
-      listener.getAddrs((err, multiaddrs) => {
-        expect(err).to.not.exist()
-        expect(multiaddrs.length > 0).to.equal(true)
-        expect(multiaddrs[0].toString().indexOf('0.0.0.0')).to.equal(-1)
-        listener.close(done)
-      })
-    })
+    await listener.listen(addr)
+
+    const multiaddrs = listener.getAddrs()
+    expect(multiaddrs.length > 0).to.equal(true)
+    expect(multiaddrs[0].toString().indexOf('0.0.0.0')).to.equal(-1)
+
+    await listener.close()
   })
 
-  it('.getAddrs preserves IPFS Id', (done) => {
-    const ipfsId = '/ipfs/Qmb6owHp6eaWArVbcJJbQSyifyJBttMMjYV76N2hMbf5Vw'
+  it('.getAddrs preserves IPFS Id', async () => {
+    const ipfsId = '/p2p/Qmb6owHp6eaWArVbcJJbQSyifyJBttMMjYV76N2hMbf5Vw'
     const addr = ma(9090).encapsulate(ipfsId)
 
     const listener = utp.createListener((conn) => {})
 
-    listener.listen(addr, () => {
-      listener.getAddrs((err, multiaddrs) => {
-        expect(err).to.not.exist()
-        expect(multiaddrs.length).to.equal(1)
-        expect(multiaddrs[0]).to.eql(addr)
-        listener.close(done)
-      })
-    })
+    await listener.listen(addr)
+
+    const multiaddrs = listener.getAddrs()
+    expect(multiaddrs.length).to.equal(1)
+    expect(multiaddrs[0]).to.eql(addr)
+
+    await listener.close()
   })
 })
 

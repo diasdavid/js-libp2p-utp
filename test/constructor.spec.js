@@ -7,9 +7,14 @@ const expect = chai.expect
 chai.use(dirtyChai)
 const UTP = require('../src')
 
+const mockUpgrader = {
+  upgradeInbound: maConn => maConn,
+  upgradeOutbound: maConn => maConn
+}
+
 describe('Constructor', () => {
   it('create an instance', () => {
-    const utp = new UTP()
+    const utp = new UTP({ upgrader: mockUpgrader })
     expect(utp).to.exist()
   })
 })
